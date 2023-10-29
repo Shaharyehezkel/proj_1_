@@ -12,10 +12,28 @@
             <li><a href="/loans/list">Loans</a></li>
         </ul>
     </nav>
-    
     <h1>Loan List</h1>
     <ul id="loanList"></ul>
+
+    <h2>Loan a Book</h2>
+<form id="loanBookForm">
+    <label for="bookId">Book ID:</label>
+    <input type="number" id="bookId" required>
+
+    <label for="userId">User ID:</label>
+    <input type="number" id="userId" required>
+
+    <label for="loanDate">Loan Date:</label>
+    <input type="date" id="loanDate" required>
+
+    <label for="loanLength">Loan Length (days):</label>
+    <input type="number" id="loanLength" required>
     
+    <input type="submit" value="Loan Book">
+</form>
+<h1>Late Loans</h1>
+<ul id="lateLoanList"></ul>
+
     <script>
         let allLoans = [];
 
@@ -36,11 +54,80 @@
             loanList.innerHTML = ""; // Clear existing content
 
             allLoans.forEach(function (loan) {
+
                 let listItem = document.createElement('li');
-                listItem.textContent = loan.book_id + ", " + loan.user_id + ", " + loan.loan_date + ", " + loan.loan_length;
+                listItem.textContent = `Book ID: ${loan.book_id}, User ID: ${loan.user_id}, Loan Date: ${loan.loan_date}, Loan Length: ${loan.loan_length} days.`;
+                
+                let returnBtn = document.createElement('button');
+                returnBtn.textContent = "Return Book";
+                returnBtn.onclick = function() { returnBook(loan.id); };
+                listItem.appendChild(returnBtn);
                 loanList.appendChild(listItem);
             });
         }
+        getLoans();
+
+        document.getElementById("loanBookForm").addEventListener("submit", function(event) {
+        event.preventDefault();  // Prevents form from submitting the traditional way
+
+        const bookId = document.getElementById("bookId").value;
+        const userId = document.getElementById("userId").value;
+        const loanDate = document.getElementById("loanDate").value;
+        const loanLength = document.getElementById("loanLength").value;
+
+        axios.post('/loans/add', {
+            book_id: bookId,
+            user_id: userId,
+            loan_date: loanDate,
+            loan_length: loanLength
+        })
+        .then(function(response) {
+            alert(response.data.message);
+            getLoans();  
+        })
+        .catch(function(error) {
+            alert('Error loaning book: ' + error.response.data.error);
+        });
+    });
+
+    function returnBook(loan_id) {
+        axios.put('/loans/' + loan_id + '/return')
+            .then(function(response) {
+                alert(response.data.message);
+                getLoans();  
+            })
+            .catch(function(error) {
+                alert('Error returning book: ' + error.response.data.error);
+            });
+    }
+    
+    let lateLoans = [];
+
+    function getLateLoans() {
+    axios.get('/loans/late')
+        .then(function(response) {
+            lateLoans = response.data.late_loans;
+            displayLateLoans();  
+        })
+        .catch(function(error) {
+            console.error('Error fetching late loans:', error);
+        });
+}
+
+
+    function displayLateLoans() {
+        let lateLoanList = document.getElementById('lateLoanList');
+        lateLoanList.innerHTML = ""; 
+
+        lateLoans.forEach(function(loan) {
+            let listItem = document.createElement('li');
+            let returnDateText = loan.return_date ? `Returned on ${loan.return_date}` : 'Not returned';
+            listItem.textContent = `Book ID: ${loan.book_id}, User ID: ${loan.user_id}, Loan Date: ${loan.loan_date}, Loan Length: ${loan.loan_length} days.`;
+            lateLoanList.appendChild(listItem);
+        });
+    }
+
+    getLateLoans();
     </script>
 </body>
 </html>

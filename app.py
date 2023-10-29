@@ -1,7 +1,11 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship
-
+from flask import render_template
+from datetime import datetime, timedelta
+from sqlalchemy import func, or_
+from flask_migrate import Migrate
+from sqlalchemy import and_
 
 
 
@@ -18,6 +22,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///books.db"
 
 # SQLAlchemy database object
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
+
 
 
 
@@ -37,7 +43,7 @@ class Book(db.Model):
         self.year_published = year_published
         self.stock = stock
     loans = relationship('Loan', backref='book', lazy=True)
-       
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
@@ -56,20 +62,30 @@ class Loan(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     loan_date = db.Column(db.Integer, nullable=False)
     loan_length = db.Column(db.Integer, nullable=False)
-    returned = db.Column(db.Boolean, default=False)
+    return_date = db.Column(db.Date, nullable=True)
 
 
-    def __init__(self, book_id, user_id, loan_date, loan_length):
+    def __init__(self, book_id, user_id, loan_date, loan_length,return_date):
         self.book_id = book_id
         self.user_id = user_id
         self.loan_date = loan_date
         self.loan_length = loan_length
-        self.returned = False
+        self.return_date = return_date
 
 
-   
+#routes for html
 
+@app.route('/books/list', methods=["GET"])
+def page_books():
+    return render_template("books.html")
 
+@app.route('/loans/list', methods=["GET"])
+def page_loans():
+    return render_template("loans.html")
+
+@app.route('/users/list', methods=["GET"])
+def page_users():
+    return render_template("users.html")
 
 
 # Create the database tables
@@ -140,22 +156,15 @@ def update_book(book_id):
     return jsonify({"message": "Book updated successfully"})
 
 
-
-
 # Route to delete a book by ID
-@app.route('/books/<int:book_id>/delete', methods=["PUT"])
+@app.route('/books/<int:book_id>/delete', methods=["DELETE"])
 def delete_book(book_id):
     book = Book.query.get(book_id)
     if not book:
         return jsonify({"error": "Book not found"}), 404
-    book.title = "DELETED BOOK"
-    book.author = "null"
-    book.year_published = "null"
-    book.stock = "null"
+    db.session.delete(book)
     db.session.commit()
     return jsonify({"message": "Book deleted successfully"})
-
-
 
 
 # Route to get all users
@@ -183,7 +192,7 @@ def add_user():
     name = data.get("name")
     city = data.get("city")
     age = data.get("age")
-    if name and age:
+    if name and city and age:
         new_user = User(name=name, city=city, age=age)
         db.session.add(new_user)
         db.session.commit()
@@ -222,9 +231,7 @@ def delete_user(user_id):
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
-    user.name = "DELETED USER"
-    user.city = "null"
-    user.age = "null"
+    db.session.delete(user)
     db.session.commit()
     return jsonify({"message": "User deleted successfully"})
 
@@ -242,7 +249,8 @@ def get_loans():
             "book_id": loan.book_id,
             "user_id": loan.user_id,
             "loan_date": loan.loan_date,
-            "loan_length": loan.loan_length
+            "loan_length": loan.loan_length,
+            "return_date":loan.return_date
         }
         loan_list.append(loan_data)
     return jsonify({"loans": loan_list})
@@ -251,44 +259,94 @@ def get_loans():
 
 
 # Route to add a new loan
+# @app.route('/loans/add', methods=["POST"])
+# def add_loan():
+#     book = Book.query.get(book_id)
+#     data = request.json
+#     book_id = data.get("book_id")
+#     user_id = data.get("user_id")
+#     loan_date = data.get("loan_date")
+#     loan_length = data.get("loan_length")
+#     return_date = data.get("return_date")
+#     if not book:
+#             return jsonify({"error": "Book not found"}), 404
+   
+#     if book_id and user_id and loan_date and loan_length and return_date:
+#         # Check if the book exists
+#         book = Book.query.get(book_id)
+#         if not book:
+#             return jsonify({"error": "Book not found"}), 404
+       
+#         user = User.query.get(user_id)
+#         if not user:
+#             return jsonify({"error": "User not found"}), 404
+       
+#         # Check if there are enough books in stock
+#         if book.stock <= 0:
+#             return jsonify({"error": "No more copies of this book in stock"}), 400
+       
+#         # Check if the requested loan length is valid
+#     try:
+#         loan_length_int = int(loan_length)
+#         if 1 <= loan_length_int <= 365:
+#             new_loan = Loan(book_id=book_id, user_id=user_id, loan_date=loan_date, loan_length=loan_length,return_date=return_date)
+#             db.session.add(new_loan)
+#             db.session.commit()
+
+#             # Update the stock of the book
+#             book.stock -= 1
+#             db.session.commit()
+#             return jsonify({"message": "Loan added successfully"})
+#         else:
+#             return jsonify({"error": "Loan length should be between 1 and 365 days."}),400
+#         #else:
+#         #return jsonify({"error": "Book ID, user ID, loan date, and loan length are required."}), 400
+#     except ValueError:
+#         return jsonify({"error": "Invalid loan length provided."})
 @app.route('/loans/add', methods=["POST"])
 def add_loan():
     data = request.json
-    book_id = data.get("book_id")
-    user_id = data.get("user_id")
+    
+    try:
+        book_id = int(data.get("book_id"))
+        user_id = int(data.get("user_id"))
+    except ValueError:
+        return jsonify({"error": "Invalid book_id or user_id provided."}), 400
+
     loan_date = data.get("loan_date")
     loan_length = data.get("loan_length")
-    returned = False
-   
-    if book_id and user_id and loan_date and loan_length:
-        # Check if the book exists
-        book = Book.query.get(book_id)
-        if not book:
-            return jsonify({"error": "Book not found"}), 404
-       
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-       
-        # Check if there are enough books in stock
-        if book.stock <= 0:
-            return jsonify({"error": "No more copies of this book in stock"}), 400
-       
-        # Check if the requested loan length is valid
-        if 1 <= loan_length <= 365:
-            new_loan = Loan(book_id=book_id, user_id=user_id, loan_date=loan_date, loan_length=loan_length)
+    return_date = data.get("return_date")
+
+    # Check if the book and user exist
+    book = Book.query.get(book_id)
+    if not book:
+        return jsonify({"error": "Book not found"}), 404
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Check if there are enough books in stock
+    if book.stock <= 0:
+        return jsonify({"error": "No more copies of this book in stock"}), 400
+
+    try:
+        loan_length_int = int(loan_length)
+        if 1 <= loan_length_int <= 365:
+            new_loan = Loan(book_id=book_id, user_id=user_id, loan_date=loan_date, loan_length=loan_length, return_date=return_date)
             db.session.add(new_loan)
             db.session.commit()
-           
+
             # Update the stock of the book
             book.stock -= 1
             db.session.commit()
-           
+
             return jsonify({"message": "Loan added successfully"})
         else:
-            return jsonify({"error": "Length of loan is invalid, must be between 1 and 365 days."})
-    else:
-        return jsonify({"error": "Book ID, user ID, loan date, and loan length are required."}), 400
+            return jsonify({"error": "Loan length should be between 1 and 365 days."}), 400
+
+    except ValueError:
+        return jsonify({"error": "Invalid loan length provided."})
 
 
 
@@ -354,6 +412,65 @@ def delete_loan(loan_id):
     loan.returned = "null"
     db.session.commit()
     return jsonify({"message": "Loan deleted successfully"})
+
+@app.route('/loans/<int:loan_id>/return', methods=["PUT"])
+def return_book(loan_id):
+    loan = Loan.query.get(loan_id)
+    if not loan:
+        return jsonify({"error": "Loan not found"}), 404
+    # Assuming you have a boolean column in Loan model named `returned` which is False by default
+    loan.returned = True
+    # Update book stock
+    book = Book.query.get(loan.book_id)
+    book.stock += 1
+    db.session.commit()
+    return jsonify({"message": "Book returned successfully"})
+
+
+
+#@app.route('/loans/late', methods=["GET"])
+#def get_late_loans():
+ #   current_date = datetime.utcnow()
+  #  late_loans = Loan.query.filter(and_(
+   #  Loan.loan_date + timedelta(days=Loan.loan_length) < current_date).all()
+
+    #loans_list = [{
+     #   "id": loan.id,
+      #  "book_id": loan.book_id,
+       # "user_id": loan.user_id,
+        #"loan_date": loan.loan_date,
+        #"loan_length": loan.loan_length,
+        #"return_date": str(loan.return_date) if loan.return_date else None
+
+    #} for loan in late_loans]
+
+    #return jsonify({"late_loans": loans_list})
+
+@app.route('/loans/late', methods=["GET"])
+def get_late_loans():
+    current_date = datetime.utcnow()
+
+    # Fetch all the loans
+    all_loans = Loan.query.all()
+
+    # Filter out only the late loans using list comprehension
+    late_loans = [
+        loan for loan in all_loans
+        if datetime.strptime(loan.loan_date, "%Y-%m-%d") + timedelta(days=loan.loan_length) < current_date
+        and (loan.return_date is None or loan.return_date > current_date)
+    ]
+
+    loans_list = [{
+        "id": loan.id,
+        "book_id": loan.book_id,
+        "user_id": loan.user_id,
+        "loan_date": loan.loan_date,
+        "loan_length": loan.loan_length,
+        "return_date": str(loan.return_date) if loan.return_date else None
+    } for loan in late_loans]
+
+    return jsonify({"late_loans": loans_list})
+
 
 
 

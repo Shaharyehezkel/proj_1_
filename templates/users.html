@@ -15,7 +15,24 @@
     
     <h1>User List</h1>
     <ul id="userList"></ul>
-    
+
+<h2>Add a User</h2>
+<form id="addUserForm">
+    <label for="userName">Name:</label>
+    <input type="text" id="userName" required>
+    <label for="userCity">City:</label>
+    <input type="text" id="userCity">
+    <label for="userAge">Age:</label>
+    <input type="number" id="userAge" required>
+    <input type="submit" value="Add User">
+</form>
+
+    <h2>Search for a User</h2>
+    <input type="text" id="searchName" placeholder="Enter user name">
+    <button onclick="searchUser()">Search</button>
+    <div id="searchResults"></div>
+
+
     <script>
         let allUsers = [];
 
@@ -38,9 +55,76 @@
             allUsers.forEach(function (user) {
                 let listItem = document.createElement('li');
                 listItem.textContent = user.name + ", " + user.city + ", " + user.age + ".";
+
+                let removeBtn = document.createElement('button');
+                removeBtn.textContent = "Remove";
+                removeBtn.setAttribute("data-user-id", user.id);  // Assigning the user ID to the remove button
+                removeBtn.onclick = function() {
+                    const userId = this.getAttribute("data-user-id");  // Retrieving the user ID from the remove button
+                    removeUser(userId); 
+                };
+                listItem.appendChild(removeBtn);
                 userList.appendChild(listItem);
             });
         }
+
+        document.getElementById("addUserForm").addEventListener("submit", function(event) {
+            event.preventDefault();  // Prevents form from submitting the traditional way
+    
+            const name = document.getElementById("userName").value;
+            const city = document.getElementById("userCity").value;
+            const age = document.getElementById("userAge").value;
+
+            axios.post('/users/add', {
+                name: name,
+                city: city,
+                age: age
+            })
+            .then(function(response) {
+                alert(response.data.message);
+                getUsers();   
+            })
+            .catch(function(error) {
+                alert('Error adding user: ' + error.response.data.error);
+            });
+        });
+
+        function searchUser() {
+        const nameToSearch = document.getElementById('searchName').value.toLowerCase();
+        const searchResultsDiv = document.getElementById('searchResults');
+
+        searchResultsDiv.innerHTML = '';
+
+        const filteredUsers = allUsers.filter(user => user.name.toLowerCase().includes(nameToSearch));
+
+        if (filteredUsers.length === 0) {
+            searchResultsDiv.innerHTML = "No users found with that name.";
+        } else {
+            filteredUsers.forEach(user => {
+                const userDiv = document.createElement('div');
+                userDiv.textContent = user.name + ", " + user.city + ", " + user.age + ".";
+                searchResultsDiv.appendChild(userDiv);
+            });
+        }
+    }
+
+    function removeUser(userId) {
+    if (!userId) {
+        userId = "undefined";
+    }
+
+    axios.put('/users/' + userId + '/delete') // Send DELETE request
+    .then(function(response) {
+        alert(response.data.message);
+        getUsers();  // Refresh the user list after deleting
+    })
+    .catch(function(error) {
+        alert('Error removing user: ' + error.response.data.error);
+    });
+}
+
+
+
     </script>
 </body>
 </html>

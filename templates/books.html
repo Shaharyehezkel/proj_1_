@@ -14,8 +14,30 @@
     </nav>
 
     <h1>Book List</h1>
-    <ul id="bookList"></ul>
+
+    <h2>Search for a Book</h2>
+
+    <input type="text" id="searchInput" placeholder="Enter book title">
+    <button onclick="searchBook()">Search</button>
     
+    <ul id="bookList"></ul>
+    <h2>Add a New Book</h2>
+<form id="addBookForm">
+    <label for="title">Title:</label>
+    <input type="text" id="title" required><br><br>
+
+    <label for="author">Author:</label>
+    <input type="text" id="author" required><br><br>
+
+    <label for="year_published">Year Published:</label>
+    <input type="text" id="year_published" required><br><br>
+
+    <label for="stock">Stock:</label>
+    <input type="number" id="stock" required><br><br>
+
+    <input type="submit" value="Add Book">
+</form>
+
     <script>
         let allBooks = [];
 
@@ -31,16 +53,79 @@
         }
         getBooks();
 
-        function displayBooks() {
+        function displayBooks(books = allBooks) {
             let bookList = document.getElementById('bookList');
             bookList.innerHTML = "";
 
-            allBooks.forEach(function (book) {
+            books.forEach(function (book) {
                 let listItem = document.createElement('li');
                 listItem.textContent = book.title + ", " + book.author + ", " + book.year_published + ".";
                 bookList.appendChild(listItem);
+
+                // Create a remove button for each book
+                let removeButton = document.createElement('button');
+                removeButton.textContent = "Remove";
+                removeButton.setAttribute('data-book-id', book.id);  // Store the book's ID
+                removeButton.addEventListener('click', removeBook);  // Attach event handler
+
+                listItem.appendChild(removeButton);
+                bookList.appendChild(listItem);
             });
         }
+
+        function removeBook(event) {
+            const bookId = event.target.getAttribute('data-book-id'); 
+            const listItem = event.target.parentElement;
+    // Send DELETE request (Note: you've defined the route with a PUT method in your Flask app)
+            axios.delete('/books/' + bookId + '/delete') 
+                .then(function(response) {
+                    if (response.data.error) {
+                        alert('Error: ' + response.data.error);
+                    } else {
+                        alert(response.data.message);
+                        listItem.remove(); 
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Error removing the book:', error);
+                    alert('An error occurred. Please try again.');
+                });
+            }
+
+        function searchBook() {
+            const searchValue = document.getElementById('searchInput').value.toLowerCase();
+
+            const filteredBooks = allBooks.filter(book => 
+                book.title.toLowerCase().includes(searchValue)
+            );
+
+            displayBooks(filteredBooks);  // Display only books that match the search
+        }
+
+        document.getElementById('addBookForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+
+    let formData = {
+        title: document.getElementById('title').value,
+        author: document.getElementById('author').value,
+        year_published: document.getElementById('year_published').value,
+        stock: document.getElementById('stock').value,
+    };
+
+    axios.post('/books/add', formData)
+        .then(function(response) {
+            if (response.data.error) {
+                alert('Error: ' + response.data.error);
+            } else {
+                alert(response.data.message);
+                getBooks(); // Refresh the book list after adding
+            }
+        })
+        .catch(function(error) {
+            console.error('Error adding the book:', error);
+            alert('An error occurred. Please try again.');
+        });
+});
     </script>
 </body>
 </html>
